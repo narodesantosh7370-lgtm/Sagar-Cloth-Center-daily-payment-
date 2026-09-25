@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Payment - Sagar Cloth Center</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f2f2f2;margin:0;padding:15px}
+.box{max-width:520px;margin:auto;background:#fff;padding:20px;border-radius:15px;box-shadow:0 2px 10px #bbb}
+h1{text-align:center}.section{margin-top:18px;padding:15px;background:#eef5ff;border-radius:10px}
+input{width:100%;box-sizing:border-box;padding:13px;margin:7px 0;font-size:17px;border:1px solid #ccc;border-radius:8px}
+button{width:100%;padding:13px;margin-top:9px;font-size:17px;border:0;border-radius:8px;background:#1976d2;color:#fff}
+.total{margin-top:20px;padding:15px;background:#e8f5e9;border-radius:10px;font-size:19px}
+.grand{margin-top:15px;padding:18px;background:#fff3cd;border-radius:10px;text-align:center;font-size:24px;font-weight:bold}
+.item{position:relative;background:#f8f8f8;padding:14px;margin-top:8px;border-radius:8px;border-left:5px solid #1976d2;user-select:none;-webkit-user-select:none}
+.item.long{background:#ffe8e8}.delete-option{display:none;background:#d32f2f;color:#fff;border:0;padding:8px 14px;border-radius:7px;margin-top:12px;width:auto;font-size:15px}.item.long .delete-option{display:inline-block}
+.hint{text-align:center;color:#777;font-size:14px;margin-top:8px}.empty{text-align:center;color:#777;padding:15px}
+.statement-total{margin-top:12px;padding:13px;background:#fff;border-radius:8px;font-size:18px}
+.small{font-size:14px;color:#555}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<div class="box">
+<h1>Daily Payment - Sagar Cloth Center</h1>
+
+<div class="section">
+<h2>➕ Payment Add करा</h2>
+<div class="small">एकाच तारखेला पुन्हा Payment टाकल्यास नवीन History तयार होणार नाही. त्याच तारखेच्या Cash/UPI मध्ये रक्कम जमा होईल.</div>
+<input type="date" id="paymentDate">
+<input type="number" id="cash" placeholder="Cash रक्कम" min="0">
+<input type="number" id="upi" placeholder="UPI रक्कम" min="0">
+<button onclick="addPayment()">➕ Payment Add करा</button>
+</div>
+
+<div class="total">
+💵 Cash Total: ₹<span id="cashTotal">0</span><br><br>
+📱 UPI Total: ₹<span id="upiTotal">0</span>
+</div>
+<div class="grand">🟢 एकूण Total<br>₹<span id="grandTotal">0</span></div>
+
+<div class="section">
+<h2>📊 Statement</h2>
+<div class="small">कोणत्याही दोन तारखांमधील Statement काढा.</div>
+<input type="date" id="fromDate">
+<input type="date" id="toDate">
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+<button type="button" onclick="showStatement()">ट्रांजेक्शन पहा</button>
+<button type="button" id="transactionPdfBtn" onclick="downloadStatementPDF()">ट्रांजेक्शन PDF डाउनलोड करा</button>
+</div>
+<div id="statementResult"></div>
+</div>
+
+<div class="history">
+<h2>📋 History</h2>
+<div class="hint">ज्या History ला Delete करायचे आहे त्यावर Long Press करा.</div>
+<div id="historyList"></div>
+</div>
+</div>
+
+<script>
+let payments=JSON.parse(localStorage.getItem("payments"))||[];
+
+function todayISO(){
+ const d=new Date();
+ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+
+function addPayment(){
+ const date=document.getElementById("paymentDate").value;
+ const cash=Number(document.getElementById("cash").value)||0;
+ const upi=Number(document.getElementById("upi").value)||0;
+
+ if(!date){alert("कृपया Payment ची तारीख निवडा.");return;}
+ if(cash===0&&upi===0){alert("कृपया Cash किंवा UPI रक्कम टाका.");return;}
+
+ const parts=date.split("-");
+ const displayDate=parts[2]+"/"+parts[1]+"/"+parts[0];
+
+ // त्याच तारखेची History आधीपासून असेल तर त्यातच रक्कम जमा करा.
+ const existing=payments.find(p=>p.date===date);
+
+ if(existing){
+   existing.cash=(Number(existing.cash)||0)+cash;
+   existing.upi=(Number(existing.upi)||0)+upi;
+   existing.total=existing.cash+existing.upi;
+   existing.time=new Date().toLocaleTimeString("en-IN");
+ }else{
+   payments.push({
+     date:date,
+     displayDate:displayDate,
+     time:new Date().toLocaleTimeString("en-IN"),
+     cash:cash,
+     upi:upi,
+     total:cash+upi
+   });
+ }
+
+ // तारीख क्रमाने नवीनतम वर
+ payments.sort((a,b)=>a.date.localeCompare(b.date));
+ saveAndShow();
+
+ document.getElementById("cash").value="";
+ document.getElementById("upi").value="";
+
+ // Payment Add केल्यानंतर तारीख आपोआप पुढच्या दिवसाची होईल
+ const nextDate = new Date(date + "T00:00:00");
+ nextDate.setDate(nextDate.getDate() + 1);
+ const nextISO = nextDate.getFullYear()+"-"+String(nextDate.getMonth()+1).padStart(2,"0")+"-"+String(nextDate.getDate()).padStart(2,"0");
+ document.getElementById("paymentDate").value = nextISO;
+
+ alert(existing ? "ही रक्कम त्याच तारखेच्या History मध्ये Add झाली." : "Payment सेव्ह झाला.");
+}
+
+function deleteOne(index){
+ if(confirm("ही पूर्ण तारीखची History Delete करायची आहे का?")){
+   payments.splice(index,1);
+   saveAndShow();
+ }
+}
+
+function saveAndShow(){
+ localStorage.setItem("payments",JSON.stringify(payments));
+ showData();
+}
+
+function showData(){
+ let cashTotal=0,upiTotal=0,history="";
+ payments.forEach((p,i)=>{
+   cashTotal+=Number(p.cash)||0;
+   upiTotal+=Number(p.upi)||0;
+   history+=`<div class="item">
+   📅 <b>${p.displayDate||p.date}</b><br><br>
+   💵 Cash: ₹${p.cash}<br>
+   📱 UPI: ₹${p.upi}<br>
+   🟢 Total: ₹${p.total}<br>
+   <button class="delete-option" onclick="deleteOne(${i})">🗑️ Delete</button>
+   </div>`;
+ });
+ if(!payments.length) history='<div class="empty">History रिकामी आहे.</div>';
+ document.getElementById("cashTotal").innerText=cashTotal;
+ document.getElementById("upiTotal").innerText=upiTotal;
+ document.getElementById("grandTotal").innerText=cashTotal+upiTotal;
+ document.getElementById("historyList").innerHTML=history;
+ setupLongPress();
+}
+
+function setupLongPress(){
+ document.querySelectorAll(".item").forEach(item=>{
+   let timer=null;
+   const start=()=>{timer=setTimeout(()=>{
+     document.querySelectorAll(".item").forEach(x=>x.classList.remove("long"));
+     item.classList.add("long");
+     if(navigator.vibrate) navigator.vibrate(100);
+   },600);};
+   const cancel=()=>{if(timer){clearTimeout(timer);timer=null;}};
+   item.addEventListener("touchstart",start,{passive:true});
+   item.addEventListener("touchend",cancel);
+   item.addEventListener("touchmove",cancel);
+   item.addEventListener("mousedown",start);
+   item.addEventListener("mouseup",cancel);
+   item.addEventListener("mouseleave",cancel);
+ });
+}
+
+function showStatement(){
+ const from=document.getElementById("fromDate").value;
+ const to=document.getElementById("toDate").value;
+ if(!from||!to){alert("कृपया दोन्ही तारीख निवडा.");return;}
+ if(from>to){alert("सुरुवातीची तारीख शेवटच्या तारखेपेक्षा मोठी असू शकत नाही.");return;}
+
+ const list=payments.filter(p=>p.date>=from&&p.date<=to);
+ let cash=0,upi=0,rows="";
+
+ list.forEach(p=>{
+   cash+=Number(p.cash)||0;
+   upi+=Number(p.upi)||0;
+   rows+=`<div class="item">📅 ${p.displayDate||p.date}<br>💵 Cash: ₹${p.cash}<br>📱 UPI: ₹${p.upi}<br>🟢 Total: ₹${p.total}</div>`;
+ });
+
+ document.getElementById("statementResult").innerHTML=
+ `<div class="statement-total">
+ 📅 ${formatDate(from)} ते ${formatDate(to)}<br><br>
+ 💵 Cash: <b>₹${cash}</b><br><br>
+ 📱 UPI: <b>₹${upi}</b><br><br>
+ 🟢 एकूण Statement: <b>₹${cash+upi}</b>
+ </div>${rows||'<div class="empty">या तारखांमध्ये कोणतीही Payment नाही.</div>'}`;
+}
+
+function formatDate(s){
+ const a=s.split("-");
+ return a[2]+"/"+a[1]+"/"+a[0];
+}
+
+document.getElementById("paymentDate").value=todayISO();
+document.getElementById("fromDate").value=todayISO();
+document.getElementById("toDate").value=todayISO();
+showData();
+
+function downloadStatementPDF(){
+  const from=document.getElementById("fromDate").value;
+  const to=document.getElementById("toDate").value;
+  if(!from || !to){ alert("कृपया From Date आणि To Date निवडा."); return; }
+  if(from>to){ alert("From Date ही To Date पेक्षा मोठी असू शकत नाही."); return; }
+
+  const rows=payments.filter(p=>p.date>=from && p.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+  if(rows.length===0){ alert("या तारखांमध्ये कोणतेही Transaction नाही."); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.text("Daily Payment - Sagar Cloth Center", 105, 18, {align:"center"});
+  doc.setFontSize(11);
+  doc.text("Statement: " + from.split("-").reverse().join("/") + " to " + to.split("-").reverse().join("/"), 105, 27, {align:"center"});
+
+  let y=40;
+  doc.setFontSize(10);
+  doc.text("Date", 15, y);
+  doc.text("Cash", 70, y);
+  doc.text("UPI", 115, y);
+  doc.text("Total", 160, y);
+  y += 7;
+
+  let cashTotal=0, upiTotal=0;
+  rows.forEach(p=>{
+    const cash=Number(p.cash)||0, upi=Number(p.upi)||0;
+    const total=Number(p.total)||cash+upi;
+    cashTotal+=cash; upiTotal+=upi;
+    if(y>275){ doc.addPage(); y=20; }
+    doc.text((p.displayDate || p.date.split("-").reverse().join("/")), 15, y);
+    doc.text("Rs. "+cash.toFixed(2), 70, y);
+    doc.text("Rs. "+upi.toFixed(2), 115, y);
+    doc.text("Rs. "+total.toFixed(2), 160, y);
+    y+=7;
+  });
+
+  const grand=cashTotal+upiTotal;
+  y+=5;
+  doc.line(15,y-3,195,y-3);
+  doc.setFontSize(11);
+  doc.text("Cash Total: Rs. "+cashTotal.toFixed(2), 15, y+5);
+  doc.text("UPI Total: Rs. "+upiTotal.toFixed(2), 15, y+13);
+  doc.text("Grand Total: Rs. "+grand.toFixed(2), 15, y+21);
+
+  doc.save("Sagar_Cloth_Center_Statement_"+from+"_to_"+to+".pdf");
+}
+</script>
+</body>
+</html>
